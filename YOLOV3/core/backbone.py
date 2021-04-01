@@ -84,11 +84,6 @@ def _transition_layer(input_x, stage,output_channel, is_avgpool=True):
 
 
 
-
-
-
-
-
 def peleenet(input_data):
 
     stem_block_output = _stem_block(input_data)
