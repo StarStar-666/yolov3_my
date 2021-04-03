@@ -11,8 +11,8 @@ cfg                           = __C
 __C.YOLO                      = edict()
 
 # Set the class name
-__C.YOLO.CLASSES              = "/content/tf20/4-Object_Detection/YOLOV3/data/classes/coco.names"
-__C.YOLO.ANCHORS              = "/content/tf20/4-Object_Detection/YOLOV3/data/anchors/basline_anchors.txt"
+__C.YOLO.CLASSES              = "/content/yolov3_my/data/classes/coco.names"
+__C.YOLO.ANCHORS              = "/content/yolov3_my/data/anchors/basline_anchors.txt"
 __C.YOLO.STRIDES              = [8, 16, 32]
 __C.YOLO.ANCHOR_PER_SCALE     = 3
 __C.YOLO.IOU_LOSS_THRESH      = 0.5
@@ -27,7 +27,7 @@ __C.TRAIN.INPUT_SIZE          = [416]
 __C.TRAIN.DATA_AUG            = True
 __C.TRAIN.LR_INIT             = 1e-3
 __C.TRAIN.LR_END              = 1e-6
-__C.TRAIN.WARMUP_EPOCHS       = 2
+__C.TRAIN.WARMUP_EPOCHS       = 3
 __C.TRAIN.EPOCHS              = 100
 
 

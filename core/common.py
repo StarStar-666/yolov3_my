@@ -119,83 +119,85 @@ def RFB_net(input_data ,name, stride=1,scale =0.1, activate=True, bn=True):
 
     return output
 
-def cbam_block(input_feature, name, ratio=8):
+from keras.layers import GlobalAveragePooling2D, GlobalMaxPooling2D, Reshape, Dense, multiply, Permute, Concatenate, Conv2D, Add, Activation, Lambda
+from keras import backend as K
+from keras.activations import sigmoid
+from keras.layers import Lambda
+
+
+def cbam_block(cbam_feature, ratio=8):
     """Contains the implementation of Convolutional Block Attention Module(CBAM) block.
     As described in https://arxiv.org/abs/1807.06521.
     """
 
-    with tf.variable_scope(name):
-        attention_feature = channel_attention(input_feature, 'ch_at', ratio)
-        attention_feature = spatial_attention(attention_feature, 'sp_at')
-        # print("CBAM Hello")
-    return attention_feature
+    cbam_feature = channel_attention(cbam_feature, ratio)
+    cbam_feature = spatial_attention(cbam_feature)
+    return cbam_feature
 
 
-def channel_attention(input_feature, name, ratio=8):
-    kernel_initializer = tf.contrib.layers.variance_scaling_initializer()
-    bias_initializer = tf.constant_initializer(value=0.0)
+def channel_attention(input_feature, ratio=8):
+    if K.image_data_format() == "channels_first":
 
-    with tf.variable_scope(name):
-        channel = input_feature.get_shape()[-1]
-        avg_pool = tf.reduce_mean(input_feature, axis=[1, 2], keepdims=True)
+        channel_axis = 1
+    else:
+        channel_axis = -1
+    channel = input_feature.get_shape()[-1]
 
-        assert avg_pool.get_shape()[1:] == (1, 1, channel)
-        avg_pool = tf.layers.dense(inputs=avg_pool,
-                                   units=channel // ratio,
-                                   activation=tf.nn.relu,
-                                   kernel_initializer=kernel_initializer,
-                                   bias_initializer=bias_initializer,
-                                   name='mlp_0',
-                                   reuse=None)
-        assert avg_pool.get_shape()[1:] == (1, 1, channel // ratio)
-        avg_pool = tf.layers.dense(inputs=avg_pool,
-                                   units=channel,
-                                   kernel_initializer=kernel_initializer,
-                                   bias_initializer=bias_initializer,
-                                   name='mlp_1',
-                                   reuse=None)
-        assert avg_pool.get_shape()[1:] == (1, 1, channel)
+    shared_layer_one = Dense(channel // ratio, activation='relu', kernel_initializer='he_normal', use_bias=True,bias_initializer='zeros')
+    shared_layer_two = Dense(channel, kernel_initializer='he_normal', use_bias=True, bias_initializer='zeros')
 
-        max_pool = tf.reduce_max(input_feature, axis=[1, 2], keepdims=True)
-        assert max_pool.get_shape()[1:] == (1, 1, channel)
-        max_pool = tf.layers.dense(inputs=max_pool,
-                                   units=channel // ratio,
-                                   activation=tf.nn.relu,
-                                   name='mlp_0',
-                                   reuse=True)
-        assert max_pool.get_shape()[1:] == (1, 1, channel // ratio)
-        max_pool = tf.layers.dense(inputs=max_pool,
-                                   units=channel,
-                                   name='mlp_1',
-                                   reuse=True)
-        assert max_pool.get_shape()[1:] == (1, 1, channel)
+    avg_pool = GlobalAveragePooling2D()(input_feature)
+    avg_pool = Reshape((1, 1, channel))(avg_pool)
+    assert avg_pool.get_shape()[1:] == (1, 1, channel)
+    avg_pool = shared_layer_one(avg_pool)
+    assert avg_pool.get_shape()[1:] == (1, 1, channel // ratio)
+    avg_pool = shared_layer_two(avg_pool)
+    assert avg_pool.get_shape()[1:] == (1, 1, channel)
 
-        scale = tf.sigmoid(avg_pool + max_pool, 'sigmoid')
+    max_pool = GlobalMaxPooling2D()(input_feature)
+    max_pool = Reshape((1, 1, channel))(max_pool)
+    assert max_pool.get_shape()[1:] == (1, 1, channel)
+    max_pool = shared_layer_one(max_pool)
+    assert max_pool.get_shape()[1:] == (1, 1, channel // ratio)
+    max_pool = shared_layer_two(max_pool)
+    assert max_pool.get_shape()[1:] == (1, 1, channel)
 
-    return input_feature * scale
+    cbam_feature = Add()([avg_pool, max_pool])
+    cbam_feature = Activation('sigmoid')(cbam_feature)
+
+    if K.image_data_format() == "channels_first":
+        cbam_feature = Permute((3, 1, 2))(cbam_feature)
+
+    return multiply([input_feature, cbam_feature])
 
 
-def spatial_attention(input_feature, name):
+def spatial_attention(input_feature):
     kernel_size = 7
-    kernel_initializer = tf.contrib.layers.variance_scaling_initializer()
-    with tf.variable_scope(name):
-        avg_pool = tf.reduce_mean(input_feature, axis=[3], keepdims=True)
-        assert avg_pool.get_shape()[-1] == 1
-        max_pool = tf.reduce_max(input_feature, axis=[3], keepdims=True)
-        assert max_pool.get_shape()[-1] == 1
-        concat = tf.concat([avg_pool, max_pool], 3)
-        assert concat.get_shape()[-1] == 2
 
-        concat = tf.layers.conv2d(concat,
-                                  filters=1,
-                                  kernel_size=[kernel_size, kernel_size],
-                                  strides=[1, 1],
-                                  padding="same",
-                                  activation=None,
-                                  kernel_initializer=kernel_initializer,
-                                  use_bias=False,
-                                  name='conv')
-        assert concat.get_shape()[-1] == 1
-        concat = tf.sigmoid(concat, 'sigmoid')
+    if K.image_data_format() == "channels_first":
+        channel = input_feature._keras_shape[1]
+        cbam_feature = Permute((2, 3, 1))(input_feature)
+    else:
+        channel = input_feature.get_shape()[-1]
+        cbam_feature = input_feature
 
-    return input_feature * concat
+    avg_pool = Lambda(lambda x: K.mean(x, axis=3, keepdims=True))(cbam_feature)
+    assert avg_pool.get_shape()[-1] == 1
+    max_pool = Lambda(lambda x: K.max(x, axis=3, keepdims=True))(cbam_feature)
+    assert max_pool.get_shape()[-1] == 1
+    concat = Concatenate(axis=3)([avg_pool, max_pool])
+    assert concat.get_shape()[-1] == 2
+    cbam_feature = Conv2D(filters=1,
+                          kernel_size=kernel_size,
+                          strides=1,
+                          padding='same',
+                          activation='sigmoid',
+                          kernel_regularizer=tf.keras.regularizers.l2(0.0005),
+                          kernel_initializer='he_normal',
+                          use_bias=False)(concat)
+    assert cbam_feature.get_shape()[-1] == 1
+
+    if K.image_data_format() == "channels_first":
+        cbam_feature = Permute((3, 1, 2))(cbam_feature)
+
+    return multiply([input_feature, cbam_feature])

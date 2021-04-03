@@ -109,7 +109,7 @@ for epoch in range(cfg.TRAIN.EPOCHS):
         loss = test_step(image_data, target)
         test_loss = test_loss + loss
     tf.print("===========================================================")
-    tf.print("=> STEP %4d  total_loss: %4.2f" % (epoch, test_loss))
+    tf.print("=> STEP %4d  total_loss: %4.2f" % (epoch, test_loss/300))
     if epoch%3==0:
         model.save_weights(logdir + str(epoch) + "yolov3.h5")
 
